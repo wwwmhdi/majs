@@ -22,7 +22,7 @@ scene_for() {
   esac
 }
 ALL="intro variables constants functions lambdas outro"
-AV1=(-c:v libaom-av1 -b:v 0 -crf 34 -usage realtime -cpu-used 8 -row-mt 1 -tile-columns 4 -g 240 -pix_fmt yuv420p)
+AV1=(-c:v libaom-av1 -b:v 0 -crf 40 -usage realtime -cpu-used 8 -row-mt 1 -tiles 8x2 -g 240 -pix_fmt yuv420p)
 
 render() {
   local sec=$1 scene; scene=$(scene_for "$1")
@@ -43,14 +43,14 @@ render() {
 encode() {
   local sec=$1 scene; scene=$(scene_for "$1")
   if [[ -s "$OUT/${sec}_v.mp4" ]] && ffprobe -v error "$OUT/${sec}_v.mp4" >/dev/null 2>&1; then echo "== encode $sec: already done, skip =="; return 0; fi
-  echo "== encode $sec (parallel chunks) =="
+  echo "== encode $sec (sequential resumable chunks) =="
   local nf; nf=$(ls "$FR" | wc -l)
   local nchunks=8 cs k start cnt
   cs=$(( (nf + nchunks - 1) / nchunks ))
-  local pids=()
   for ((k=0; k<nchunks; k++)); do
     start=$(( 1 + k*cs ))
     cnt=$(( nf - start + 1 ))
+    (( cnt > cs )) && cnt=$cs
     if (( cnt <= 0 )); then break; fi
     local pf="$OUT/${sec}_part_$(printf '%02d' "$k").mp4"
     if [[ -s "$pf" ]] && ffprobe -v error "$pf" >/dev/null 2>&1 \
@@ -59,14 +59,11 @@ encode() {
       continue
     fi
     rm -f "$pf"
+    echo "   chunk $k: frames $start..$((start+cnt-1))"
     ffmpeg -y -hide_banner -loglevel error -framerate 60 -start_number "$start" \
-      -i "$FR/${scene}%04d.png" -frames:v "$cnt" "${AV1[@]}" -threads 6 -an \
-      "$pf" &
-    pids+=("$!")
+      -i "$FR/${scene}%04d.png" -frames:v "$cnt" "${AV1[@]}" -threads 48 -an \
+      "$pf"
   done
-  local fail=0
-  for p in "${pids[@]}"; do wait "$p" || fail=1; done
-  if (( fail )); then echo "chunk encode failed (will resume)" >&2; return 1; fi
   : > "$OUT/${sec}_parts.txt"
   for f in "$OUT/${sec}_part_"*.mp4; do echo "file '$(basename "$f")'" >> "$OUT/${sec}_parts.txt"; done
   ffmpeg -y -hide_banner -loglevel error -f concat -safe 0 -i "$OUT/${sec}_parts.txt" \
