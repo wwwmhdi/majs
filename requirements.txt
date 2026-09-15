@@ -1,0 +1,8 @@
+manim[gui]==0.19.1
+av>=12
+pydub
+arabic-reshaper
+python-bidi
+edge-tts
+gTTS
+click>=8.5
