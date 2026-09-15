@@ -16,6 +16,7 @@ from manim import (
     UP,
     Arrow,
     Code,
+    Dot,
     FadeIn,
     FadeOut,
     GrowArrow,
@@ -27,6 +28,7 @@ from manim import (
     VGroup,
     config,
     there_and_back,
+    linear,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -118,6 +120,25 @@ class ArabicBase(Scene):
         """Narration budget (seconds) for beat i."""
         return float(self._budgets[i]) if i < len(self._budgets) else 4.0
 
+    # ---------------------------------------------------------------- holds
+    def hold(self, t: float) -> None:
+        """Hold the frame for t seconds WITHOUT frame deduplication.
+
+        In PNG output Manim collapses static waits into a single frame,
+        which would cut every narration pause. Animating an invisible
+        dot imperceptibly forces the writer to emit every frame.
+        """
+        t = max(0.0, float(t))
+        if t <= 1 / 60 + 1e-6:
+            self.wait(t)
+            return
+        if not hasattr(self, "_ghost"):
+            self._ghost = Dot(radius=1e-3).set_opacity(0)
+            self._ghost.move_to([W / 2 - 0.05, -H / 2 + 0.05, 0])
+            self.add(self._ghost)
+        self.play(self._ghost.animate.shift(RIGHT * 1e-3),
+                  run_time=t, rate_func=linear)
+
 
 class TitleSection(ArabicBase):
     """Intro / outro: centered green title + white description."""
@@ -137,21 +158,21 @@ class TitleSection(ArabicBase):
         rt = max(0.8, min(2.0, t0 - 0.8))
         self.play(FadeIn(self.title, scale=1.22), run_time=rt)
         used = rt + self._subtitle(0)
-        self.wait(max(0.15, t0 - used))
+        self.hold(max(0.15, t0 - used))
 
         t1 = self._beat(1)
         rt1 = max(0.8, min(1.8, t1 - 0.8))
         self.play(FadeIn(self.desc, shift=DOWN * 1.2), run_time=rt1)
         used = rt1 + self._subtitle(1)
-        self.wait(max(0.15, t1 - used))
+        self.hold(max(0.15, t1 - used))
 
         for i in range(2, len(self._beats)):
             used = self._subtitle(i)
-            self.wait(max(0.15, self._beat(i) - used))
+            self.hold(max(0.15, self._beat(i) - used))
 
         self._drop_sub()
         self.play(FadeOut(self.title), FadeOut(self.desc), run_time=0.8)
-        self.wait(0.4)
+        self.hold(0.4)
 
 
 class IntroSection(TitleSection):
@@ -376,17 +397,17 @@ class CodeSection(ArabicBase):
                 used += self._type_lines(step.get("lines", []),
                                          max(0.5, budget - used - 0.2))
 
-            self.wait(max(0.15, budget - used))
+            self.hold(max(0.15, budget - used))
 
         # outro of the section
-        self.wait(0.3)
+        self.hold(0.3)
         self._drop_sub()
         outs = [FadeOut(self.header), FadeOut(self.box),
                 FadeOut(self.body), FadeOut(self.nums)]
         if self._arrow is not None:
             outs.append(FadeOut(self._arrow))
         self.play(*outs, run_time=0.8)
-        self.wait(0.4)
+        self.hold(0.4)
 
     def schedule(self) -> list[dict]:
         return SCHEDULES[self.section_key]
